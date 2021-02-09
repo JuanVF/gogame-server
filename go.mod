@@ -1,4 +1,4 @@
-module github.com/JuanVF/server
+module github.com/JuanVF/gogame-server
 
 go 1.15
 
