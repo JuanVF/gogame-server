@@ -16,7 +16,8 @@ type Void func()
 // can be performed by what the user sends
 type socketHandler struct {
 	connections map[*websocket.Conn]*Sockets
-	actions     map[int]Void
+	actions     map[int]Void // ID must be the Message ID
+	errorAction Void         //This will be return when the action you ask for does not exists
 }
 
 // GetSocketHandlerInstance will return the instance of the socketHandler
@@ -26,10 +27,18 @@ func GetInstance() *socketHandler {
 		handler = &socketHandler{
 			connections: make(map[*websocket.Conn]*Sockets),
 			actions:     make(map[int]Void),
+			errorAction: func() {
+				// By default will not do anything
+			},
 		}
 	}
 
 	return handler
+}
+
+// SetErrorAction allow you to set the error action
+func (s *socketHandler) SetErrorAction(action Void) {
+	s.errorAction = action
 }
 
 // AddConn will add a user to the handler
@@ -56,18 +65,18 @@ func (s *socketHandler) RemoveConn(ws *websocket.Conn) error {
 
 // SendToAll will send a message to all the users
 // if an error occurs it will delete the user from the connection
-func (s *socketHandler) SendToAll(msg Message) error {
+func (s *socketHandler) SendToAll(msg Message) (sendError error) {
 	for user, _ := range s.connections {
 		err := user.WriteJSON(msg)
 
 		if err != nil {
 			delete(s.connections, user)
-
-			return err
+			sendError = err
+			continue
 		}
 	}
 
-	return nil
+	return
 }
 
 // SendTo will send a message to a certain user
@@ -87,22 +96,23 @@ func (s *socketHandler) SendTo(msg Message, ws *websocket.Conn) error {
 }
 
 // Send will send a message to various users
-func (s *socketHandler) Send(msg Message, users []*websocket.Conn) (err error) {
+func (s *socketHandler) Send(msg Message, users []*websocket.Conn) (sendError error) {
 	for _, user := range users {
 		// We will send the message to all the users that exists
 		// but this will throw an error anyways
 		if s.connections[user] == nil {
-			err = fmt.Errorf("Socket Handler: %v does not exists...\n", user)
+			sendError = fmt.Errorf("Socket Handler: %v does not exists...\n", user)
 
 			continue
 		}
 
-		err = user.WriteJSON(msg)
+		err := user.WriteJSON(msg)
 
 		if err != nil {
 			delete(s.connections, user)
+			sendError = err
 
-			return err
+			continue
 		}
 	}
 
@@ -173,4 +183,16 @@ func (s *socketHandler) SetAction(key int, action Void) error {
 	s.actions[key] = action
 
 	return nil
+}
+
+// GetAction will return an action based on a key
+// if it doesnt exists it will return the error action
+func (s *socketHandler) GetAction(key int) Void {
+	action := s.actions[key]
+
+	if action == nil {
+		return s.errorAction
+	}
+
+	return action
 }
